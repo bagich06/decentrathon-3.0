@@ -1,0 +1,33 @@
+version: "3.8"
+
+services:
+  app:
+    build: .
+    container_name: rtmp2rtsp-app
+    ports:
+      - "8080:8080"
+    depends_on:
+      - mediamtx
+    environment:
+      - GIN_MODE=release
+    restart: unless-stopped
+
+  mediamtx:
+    image: bluenviron/mediamtx:latest
+    container_name: mediamtx
+    ports:
+      - "8554:8554" # RTSP
+      - "1935:1935" # RTMP (если потребуется)
+      - "8888:8888" # HTTP API/WEB (если потребуется)
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    container_name: rtmp2rtsp-frontend
+    ports:
+      - "3000:80"
+    environment:
+      - REACT_APP_API_URL=http://app:8080
+    depends_on:
+      - app
+    restart: unless-stopped
