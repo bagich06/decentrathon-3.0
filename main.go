@@ -6,8 +6,11 @@ import (
 	"os/exec"
 	"sync"
 
+	"encoding/json"
+
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/gorilla/websocket"
 	"go.uber.org/zap"
 )
 
@@ -17,11 +20,26 @@ type StreamInfo struct {
 	Cmd       *exec.Cmd
 }
 
+// TelemetryData описывает структуру телеметрии дрона
+type TelemetryData struct {
+	Lat       float64 `json:"lat"`
+	Lng       float64 `json:"lng"`
+	Alt       float64 `json:"alt"`
+	Speed     float64 `json:"speed"`
+	Timestamp int64   `json:"timestamp"`
+}
+
 var (
 	streams   = make(map[string]*StreamInfo) 
 	streamsMu sync.Mutex
 	logger    *zap.Logger
+	telemetryClients   = make(map[*websocket.Conn]bool)
+	telemetryClientsMu sync.Mutex
 )
+
+var upgrader = websocket.Upgrader{
+	CheckOrigin: func(r *http.Request) bool { return true },
+}
 
 func main() {
 	var err error
@@ -41,6 +59,8 @@ func main() {
 	r.POST("/streams/start", startStreamHandler)
 	r.POST("/streams/stop", stopStreamHandler)
 	r.GET("/streams/status", statusStreamHandler)
+	r.GET("/ws/telemetry", handleTelemetryWS)
+	r.POST("/api/telemetry", handleTelemetryPOST)
 
 	logger.Info("Starting RTMP->RTSP converter API", zap.String("addr", ":8080"))
 	r.Run(":8080")
@@ -158,4 +178,49 @@ func statusStreamHandler(c *gin.Context) {
 	}
 	logger.Info("Status requested", zap.Int("streams_count", len(result)))
 	c.JSON(http.StatusOK, result)
+}
+
+// handleTelemetryWS отправляет телеметрию всем подключённым клиентам
+func handleTelemetryWS(c *gin.Context) {
+	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	if err != nil {
+		logger.Error("WebSocket upgrade failed", zap.Error(err))
+		return
+	}
+	telemetryClientsMu.Lock()
+	telemetryClients[conn] = true
+	telemetryClientsMu.Unlock()
+	defer func() {
+		telemetryClientsMu.Lock()
+		delete(telemetryClients, conn)
+		telemetryClientsMu.Unlock()
+		conn.Close()
+	}()
+	for {
+		_, _, err := conn.ReadMessage()
+		if err != nil {
+			break
+		}
+	}
+}
+
+// sendTelemetry рассылает телеметрию всем клиентам
+func sendTelemetry(data TelemetryData) {
+	msg, _ := json.Marshal(data)
+	telemetryClientsMu.Lock()
+	for conn := range telemetryClients {
+		_ = conn.WriteMessage(websocket.TextMessage, msg)
+	}
+	telemetryClientsMu.Unlock()
+}
+
+// handleTelemetryPOST принимает телеметрию через REST и рассылает по WebSocket
+func handleTelemetryPOST(c *gin.Context) {
+	var data TelemetryData
+	if err := c.ShouldBindJSON(&data); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	sendTelemetry(data)
+	c.JSON(http.StatusOK, gin.H{"status": "telemetry sent"})
 } 

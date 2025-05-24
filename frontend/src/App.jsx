@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { startStream, stopStream, getStreams } from "./api";
+import DroneMap from "./DroneMap";
+import { BrowserRouter as Router, Routes, Route, Link } from "react-router-dom";
 
-function App() {
+function StreamsPage() {
   const [rtmpUrl, setRtmpUrl] = useState("");
   const [streamKey, setStreamKey] = useState("");
   const [streams, setStreams] = useState([]);
@@ -67,6 +69,9 @@ function App() {
       style={{ maxWidth: 600, margin: "40px auto", fontFamily: "sans-serif" }}
     >
       <h2>RTMP → RTSP Конвертер</h2>
+      <div style={{ marginBottom: 16 }}>
+        <Link to="/map">Перейти к карте движения дрона →</Link>
+      </div>
       <form onSubmit={handleStart} style={{ marginBottom: 24 }}>
         <input
           type="text"
@@ -158,6 +163,17 @@ function App() {
         Пример: <code>ffplay rtsp://localhost:8554/stream_key</code>
       </div>
     </div>
+  );
+}
+
+function App() {
+  return (
+    <Router>
+      <Routes>
+        <Route path="/" element={<StreamsPage />} />
+        <Route path="/map" element={<DroneMap />} />
+      </Routes>
+    </Router>
   );
 }
 
