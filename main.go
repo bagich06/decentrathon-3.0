@@ -8,6 +8,8 @@ import (
 
 	"encoding/json"
 
+	"io/ioutil"
+
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -29,12 +31,15 @@ type TelemetryData struct {
 	Timestamp int64   `json:"timestamp"`
 }
 
+type Route []TelemetryData
+
 var (
 	streams   = make(map[string]*StreamInfo) 
 	streamsMu sync.Mutex
 	logger    *zap.Logger
 	telemetryClients   = make(map[*websocket.Conn]bool)
 	telemetryClientsMu sync.Mutex
+	routesFile = "routes.json"
 )
 
 var upgrader = websocket.Upgrader{
@@ -61,6 +66,8 @@ func main() {
 	r.GET("/streams/status", statusStreamHandler)
 	r.GET("/ws/telemetry", handleTelemetryWS)
 	r.POST("/api/telemetry", handleTelemetryPOST)
+	r.POST("/api/routes", handleSaveRoute)
+	r.GET("/api/routes", handleGetRoutes)
 
 	logger.Info("Starting RTMP->RTSP converter API", zap.String("addr", ":8080"))
 	r.Run(":8080")
@@ -87,7 +94,6 @@ func startStreamHandler(c *gin.Context) {
 	}
 	streamsMu.Unlock()
 
-	// RTSP адрес для публикации в MediaMTX
 	rtspUrl := "rtsp://localhost:8554/" + req.StreamKey
 
 	cmd := exec.Command(
@@ -180,7 +186,6 @@ func statusStreamHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-// handleTelemetryWS отправляет телеметрию всем подключённым клиентам
 func handleTelemetryWS(c *gin.Context) {
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
@@ -204,7 +209,6 @@ func handleTelemetryWS(c *gin.Context) {
 	}
 }
 
-// sendTelemetry рассылает телеметрию всем клиентам
 func sendTelemetry(data TelemetryData) {
 	msg, _ := json.Marshal(data)
 	telemetryClientsMu.Lock()
@@ -214,7 +218,6 @@ func sendTelemetry(data TelemetryData) {
 	telemetryClientsMu.Unlock()
 }
 
-// handleTelemetryPOST принимает телеметрию через REST и рассылает по WebSocket
 func handleTelemetryPOST(c *gin.Context) {
 	var data TelemetryData
 	if err := c.ShouldBindJSON(&data); err != nil {
@@ -223,4 +226,31 @@ func handleTelemetryPOST(c *gin.Context) {
 	}
 	sendTelemetry(data)
 	c.JSON(http.StatusOK, gin.H{"status": "telemetry sent"})
+}
+
+// handleSaveRoute сохраняет маршрут в файл
+func handleSaveRoute(c *gin.Context) {
+	var route Route
+	if err := c.ShouldBindJSON(&route); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	// Читаем существующие маршруты
+	var routes []Route
+	if data, err := ioutil.ReadFile(routesFile); err == nil {
+		_ = json.Unmarshal(data, &routes)
+	}
+	routes = append(routes, route)
+	data, _ := json.MarshalIndent(routes, "", "  ")
+	_ = ioutil.WriteFile(routesFile, data, 0644)
+	c.JSON(http.StatusOK, gin.H{"status": "route saved", "routes_count": len(routes)})
+}
+
+// handleGetRoutes возвращает все маршруты
+func handleGetRoutes(c *gin.Context) {
+	var routes []Route
+	if data, err := ioutil.ReadFile(routesFile); err == nil {
+		_ = json.Unmarshal(data, &routes)
+	}
+	c.JSON(http.StatusOK, routes)
 } 

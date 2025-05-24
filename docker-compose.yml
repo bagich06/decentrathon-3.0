@@ -11,6 +11,8 @@ services:
     environment:
       - GIN_MODE=release
     restart: unless-stopped
+    volumes:
+      - ./routes.json:/app/routes.json
 
   mediamtx:
     image: bluenviron/mediamtx:latest
