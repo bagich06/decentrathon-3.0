@@ -3,6 +3,7 @@ import { startStream, stopStream, getStreams } from "./api";
 import DroneMap from "./DroneMap";
 import { BrowserRouter as Router, Routes, Route, Link } from "react-router-dom";
 import { FaMapMarkedAlt, FaCrosshairs, FaCopy } from "react-icons/fa";
+import StreamPlayer from "./StreamPlayer";
 
 function StreamsPage() {
   const [rtmpUrl, setRtmpUrl] = useState("");
@@ -11,6 +12,7 @@ function StreamsPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [selectedStream, setSelectedStream] = useState("");
 
   const fetchStreams = async () => {
     try {
@@ -215,6 +217,34 @@ function StreamsPage() {
         <FaCrosshairs style={{ color: "#7a8a5a", fontSize: 18 }} /> Активные
         потоки
       </h3>
+      <div style={{ marginBottom: 18 }}>
+        <label style={{ color: "#b6c48a", fontWeight: 600, marginRight: 8 }}>
+          Воспроизвести поток:
+        </label>
+        <select
+          value={selectedStream}
+          onChange={(e) => setSelectedStream(e.target.value)}
+          style={{
+            background: "#232b1a",
+            color: "#b6c48a",
+            border: "1.5px solid #4a5a3a",
+            borderRadius: 6,
+            padding: "8px 12px",
+            fontSize: 16,
+            fontFamily: "inherit",
+            outline: "none",
+            marginRight: 12,
+          }}
+        >
+          <option value="">Выберите поток</option>
+          {streams.map((s) => (
+            <option key={s.stream_key} value={s.stream_key}>
+              {s.stream_key}
+            </option>
+          ))}
+        </select>
+        {selectedStream && <StreamPlayer streamKey={selectedStream} />}
+      </div>
       <div
         style={{
           background: "#232b1a",
@@ -351,41 +381,6 @@ function StreamsPage() {
             ))}
           </tbody>
         </table>
-      </div>
-      <div
-        style={{
-          marginTop: 24,
-          fontSize: 15,
-          color: "#b6c48a",
-          background: "#232b1a",
-          borderRadius: 8,
-          border: "1.5px solid #3a4a3a",
-          padding: 18,
-          fontFamily: "inherit",
-          position: "relative",
-        }}
-      >
-        <div
-          style={{
-            position: "absolute",
-            top: 12,
-            right: 18,
-            opacity: 0.18,
-            fontSize: 48,
-          }}
-        >
-          <FaCrosshairs />
-        </div>
-        <b>Пример просмотра RTSP-потока:</b>
-        <br />
-        <span style={{ color: "#d2e0c2" }}>
-          <code>ffplay rtsp://localhost:8554/stream_key</code>
-        </span>
-        <br />
-        <span style={{ color: "#7a8a5a" }}>
-          Используйте VLC или ffplay для просмотра потока. Для API — смотрите
-          документацию.
-        </span>
       </div>
     </div>
   );
