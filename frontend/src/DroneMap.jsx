@@ -12,6 +12,7 @@ import L from "leaflet";
 import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png";
 import markerIcon from "leaflet/dist/images/marker-icon.png";
 import markerShadow from "leaflet/dist/images/marker-shadow.png";
+import droneIconImg from "./assets/drone.svg";
 import {
   FaCrosshairs,
   FaMapMarkedAlt,
@@ -30,6 +31,25 @@ L.Icon.Default.mergeOptions({
 });
 
 const WS_URL = "ws://localhost:8080/ws/telemetry";
+const DEFAULT_ROUTE_COLOR = "#888";
+const ROUTE_COLORS = [
+  "#888",
+  "#1976d2",
+  "#43a047",
+  "#e57373",
+  "#fbc02d",
+  "#8e24aa",
+  "#ff9800",
+  "#0097a7",
+  "#c62828",
+];
+
+const droneIcon = new L.Icon({
+  iconUrl: droneIconImg,
+  iconSize: [48, 48],
+  iconAnchor: [24, 24],
+  popupAnchor: [0, -24],
+});
 
 function MapUpdater({ position }) {
   const map = useMap();
@@ -39,6 +59,12 @@ function MapUpdater({ position }) {
     }
   }, [position]);
   return null;
+}
+
+function getRouteLabel(route, idx) {
+  const count = route.points?.length || 0;
+  const date = route.savedAt ? new Date(route.savedAt).toLocaleString() : "";
+  return `Маршрут ${idx + 1} (${count} точек${date ? ", " + date : ""})`;
 }
 
 export default function DroneMap() {
@@ -78,6 +104,8 @@ export default function DroneMap() {
   const [routes, setRoutes] = useState([]); // История маршрутов
   const [showRoutes, setShowRoutes] = useState(false);
   const [loadingRoutes, setLoadingRoutes] = useState(false);
+  const [routeColor, setRouteColor] = useState(ROUTE_COLORS[0]);
+  const [selectedRoutes, setSelectedRoutes] = useState([]); // индексы выбранных маршрутов
 
   useEffect(() => {
     wsRef.current = new window.WebSocket(WS_URL);
@@ -145,16 +173,20 @@ export default function DroneMap() {
       setSaveMsg("Маршрут слишком короткий");
       return;
     }
-    // Формируем массив точек с lat/lng (можно добавить alt, speed, timestamp при необходимости)
     const route = positions.map(([lat, lng], i) => {
-      // Если есть last, alt, speed, timestamp — можно добавить, но сейчас только lat/lng
       return { lat, lng };
     });
+    // Сохраняем цвет и дату вместе с маршрутом
+    const routeWithColor = {
+      points: route,
+      color: routeColor,
+      savedAt: new Date().toISOString(),
+    };
     try {
       const res = await fetch("http://localhost:8080/api/routes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(route),
+        body: JSON.stringify(routeWithColor),
       });
       if (res.ok) {
         setSaveMsg("Маршрут сохранён!");
@@ -175,7 +207,16 @@ export default function DroneMap() {
       const res = await fetch("http://localhost:8080/api/routes");
       if (res.ok) {
         const data = await res.json();
-        setRoutes(data);
+        // Приводим к новому формату, если старый (массив точек)
+        const normalized = data.map((route) => {
+          if (Array.isArray(route)) {
+            return { points: route, color: DEFAULT_ROUTE_COLOR };
+          }
+          return route;
+        });
+        setRoutes(normalized);
+        // По умолчанию ничего не выбрано
+        setSelectedRoutes([]);
       } else {
         setSaveMsg("Ошибка загрузки истории");
       }
@@ -185,10 +226,24 @@ export default function DroneMap() {
     setLoadingRoutes(false);
   };
 
+  // Обработчик выбора маршрута
+  const toggleRoute = (idx) => {
+    setSelectedRoutes((prev) =>
+      prev.includes(idx) ? prev.filter((i) => i !== idx) : [...prev, idx]
+    );
+  };
+
+  // Обработчик смены цвета маршрута
+  const changeRouteColor = (idx, color) => {
+    setRoutes((prev) =>
+      prev.map((route, i) => (i === idx ? { ...route, color } : route))
+    );
+  };
+
   return (
     <div
       style={{
-        maxWidth: 900,
+        maxWidth: 1200,
         margin: "40px auto",
         fontFamily: "'Share Tech Mono', 'Roboto Mono', 'Consolas', monospace",
         background: "#181c17",
@@ -533,6 +588,34 @@ export default function DroneMap() {
         </button>
       </div>
       <div style={{ display: "flex", gap: 12, marginBottom: 12 }}>
+        {/* Выбор цвета маршрута */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ color: "#b6c48a", fontWeight: 600 }}>
+            Цвет маршрута:
+          </span>
+          {ROUTE_COLORS.map((color) => (
+            <button
+              key={color}
+              onClick={() => setRouteColor(color)}
+              style={{
+                width: 28,
+                height: 28,
+                borderRadius: "50%",
+                border:
+                  routeColor === color
+                    ? "3px solid #fff"
+                    : "2px solid transparent",
+                background: color,
+                cursor: "pointer",
+                outline: "none",
+                marginRight: 2,
+                boxShadow: `0 0 6px 2px ${color}55, 0 2px 8px #10140c`,
+                transition: "box-shadow 0.2s, border 0.2s",
+              }}
+              aria-label={`Выбрать цвет ${color}`}
+            />
+          ))}
+        </div>
         <button
           onClick={saveRoute}
           disabled={positions.length < 2}
@@ -615,6 +698,83 @@ export default function DroneMap() {
           </span>
         )}
       </div>
+      {/* Выпадающий список истории маршрутов */}
+      {showRoutes && routes.length > 0 && (
+        <div
+          style={{
+            background: "#232b1a",
+            border: "1.5px solid #3a4a3a",
+            borderRadius: 10,
+            padding: 18,
+            marginBottom: 18,
+            maxWidth: 700,
+          }}
+        >
+          <div style={{ fontWeight: 700, color: "#b6c48a", marginBottom: 8 }}>
+            История маршрутов (выберите для сравнения):
+          </div>
+          {routes.map((route, idx) => (
+            <div
+              key={idx}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
+                marginBottom: 6,
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={selectedRoutes.includes(idx)}
+                onChange={() => toggleRoute(idx)}
+                style={{ width: 18, height: 18 }}
+                id={`route-check-${idx}`}
+              />
+              <label
+                htmlFor={`route-check-${idx}`}
+                style={{ flex: 1, color: "#d2e0c2" }}
+              >
+                <span
+                  style={{
+                    display: "inline-block",
+                    width: 18,
+                    height: 18,
+                    borderRadius: "50%",
+                    background: route.color || DEFAULT_ROUTE_COLOR,
+                    border: "2px solid #3a4a3a",
+                    marginRight: 8,
+                    verticalAlign: "middle",
+                  }}
+                ></span>
+                {getRouteLabel(route, idx)}
+              </label>
+              {/* Палитра для смены цвета маршрута */}
+              {ROUTE_COLORS.map((color) => (
+                <button
+                  key={color}
+                  onClick={() => changeRouteColor(idx, color)}
+                  style={{
+                    width: 28,
+                    height: 28,
+                    borderRadius: "50%",
+                    border:
+                      route.color === color
+                        ? "3px solid #fff"
+                        : "2px solid transparent",
+                    background: color,
+                    cursor: "pointer",
+                    outline: "none",
+                    marginRight: 2,
+                    boxShadow: `0 0 6px 2px ${color}55, 0 2px 8px #10140c`,
+                    transition: "box-shadow 0.2s, border 0.2s",
+                  }}
+                  aria-label={`Поменять цвет маршрута на ${color}`}
+                />
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
       <MapContainer
         center={last ? [last.lat, last.lng] : [51.1694, 71.4491]}
         zoom={5}
@@ -629,26 +789,27 @@ export default function DroneMap() {
       >
         <MapUpdater position={last ? [last.lat, last.lng] : null} />
         <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-        {/* Исторические маршруты */}
+        {/* Исторические маршруты — только выбранные */}
         {showRoutes &&
-          routes.map((route, idx) =>
-            Array.isArray(route) && route.length > 0 ? (
+          selectedRoutes.map((idx) => {
+            const route = routes[idx];
+            return Array.isArray(route.points) && route.points.length > 0 ? (
               <Polyline
                 key={idx}
-                positions={route.map((pt) => [pt.lat, pt.lng])}
-                color="#888"
+                positions={route.points.map((pt) => [pt.lat, pt.lng])}
+                color={route.color || DEFAULT_ROUTE_COLOR}
                 weight={2}
                 dashArray="6, 8"
                 opacity={0.7}
               />
-            ) : null
-          )}
+            ) : null;
+          })}
         {/* Текущий маршрут */}
         {positions.length > 0 && (
-          <Polyline positions={positions} color="blue" />
+          <Polyline positions={positions} color={routeColor} />
         )}
         {last && (
-          <Marker position={[last.lat, last.lng]}>
+          <Marker position={[last.lat, last.lng]} icon={droneIcon}>
             <Popup>
               <div>
                 <b>Координаты:</b> {last.lat.toFixed(5)}, {last.lng.toFixed(5)}

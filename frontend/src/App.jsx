@@ -4,6 +4,7 @@ import DroneMap from "./DroneMap";
 import { BrowserRouter as Router, Routes, Route, Link } from "react-router-dom";
 import { FaMapMarkedAlt, FaCrosshairs, FaCopy } from "react-icons/fa";
 import StreamPlayer from "./StreamPlayer";
+import ErrorAlert from "./ErrorAlert";
 
 function StreamsPage() {
   const [rtmpUrl, setRtmpUrl] = useState("");
@@ -70,7 +71,8 @@ function StreamsPage() {
   return (
     <div
       style={{
-        maxWidth: 700,
+        width: 1200,
+        minWidth: 900,
         margin: "40px auto",
         fontFamily: "'Share Tech Mono', 'Roboto Mono', 'Consolas', monospace",
         background: "#181c17",
@@ -82,6 +84,15 @@ function StreamsPage() {
         position: "relative",
       }}
     >
+      <ErrorAlert
+        message={error || success}
+        type={error ? "error" : "success"}
+        onClose={() => {
+          if (error) setError("");
+          else if (success) setSuccess("");
+        }}
+        duration={4000}
+      />
       <h2
         style={{
           fontWeight: 700,
@@ -191,16 +202,6 @@ function StreamsPage() {
           Старт
         </button>
       </form>
-      {error && (
-        <div style={{ color: "#e57373", marginBottom: 8, fontWeight: 600 }}>
-          {error}
-        </div>
-      )}
-      {success && (
-        <div style={{ color: "#b6c48a", marginBottom: 8, fontWeight: 600 }}>
-          {success}
-        </div>
-      )}
       <h3
         style={{
           color: "#b6c48a",
